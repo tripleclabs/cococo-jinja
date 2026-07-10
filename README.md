@@ -38,9 +38,9 @@ merge pick omit concat`. Operators `== != < <= > >= in (not in) ~ + - * / // %
 and or not` + unary `-`, ternary `x if c else y`, member `.k` / index `[i]`.
 Standalone `{{ }}` → typed value; mixed with text → string; missing → null/"".
 
-**Known impedance:** JS `number` cannot distinguish int from double. The TS peer
-must reconcile the int/double rendering rule (`12` vs `12.0`) against the Swift
-engine — tracked in the fixtures.
+**Int/double (resolved):** JS `number` cannot distinguish int from double, so the
+TS `JinjaValue` is a **tagged union** (`{kind:'int'}` vs `{kind:'double'}`);
+rendering (`12` vs `12.0`) and arithmetic key off the tag, matching Swift.
 
 ## Consuming it
 
@@ -56,17 +56,21 @@ TypeScript (bun git dep):
 ## Develop
 
 ```bash
-swift test              # CococoJinja (+ Linux via CI)
-bun install && bun test # TS peer (parity tests skipped until the peer is ported)
+swift test              # CococoJinja — 194 tests (+ Linux via CI)
+bun install && bun test # @cococo/jinja — 207 tests, incl. the shared fixture parity
 ```
 
 ## Status
 
-Swift `CococoJinja` **extracted and green** — 194 tests, **no external
-dependencies**, Linux-capable (ported from WorkflowKit; `RuleSubset` /
-`ExecutionContext+Expression` / json-logic bits excluded). The TS peer is a
-skeleton (parity tests skipped until it's ported — seed it from cococo-ui
-`src/expression.ts` + `src/json/path.ts`).
+**Both engines complete and green.** Swift `CococoJinja` — 194 tests, no external
+dependencies, Linux-capable (extracted from WorkflowKit; `RuleSubset` /
+`ExecutionContext+Expression` / json-logic bits excluded). TS `@cococo/jinja` — 207
+tests + the shared fixture parity, `tsc` clean; the two are proven identical by
+`fixtures/expression/`.
+
+**Cross-language parity caveats** (ASCII/BMP-safe; untested in both suites): string
+length is code-points (TS) vs grapheme clusters (Swift); TS models int overflow at
+2^53, Swift `Int` at 2^63; `round` is half-away-from-zero on both.
 
 Fixtures are **native Jinja** (bare-identifier roots inside `{{ }}`). The
 `$.`-rooted form (`$.state.x`) is a **surface layer** on top of this engine
