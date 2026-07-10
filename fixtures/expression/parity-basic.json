@@ -1,8 +1,8 @@
 {
   "name": "parity-basic",
   "kind": "expression",
-  "description": "Baseline Jinja-subset grammar. This is the acceptance target for cococo-ui's Jinja expansion (its engine today does `$.` paths + simple `{{ $.x }}` substitution only — no filters/operators/ternary). Every runtime (SurfaceKit-Swift, @cococo/surfaces-TS) must reproduce these.",
-  "status": "SEED — verify expected values against the SurfaceKit (WorkflowKit-derived) evaluator when the engine is ported; grammar per docs/surfaces + cococo-app Gateway/Workspaces/Expression.",
+  "description": "Baseline Jinja-subset grammar in NATIVE syntax (bare-identifier roots inside {{ }}). Acceptance target for the @cococo/jinja TS peer. The `$.`-rooted form is a SURFACE layer (cococo-surfaces / SurfaceKit), NOT this engine.",
+  "status": "Verified against CococoJinja (extracted from WorkflowKit) — every case passes.",
   "roots": {
     "state": {
       "name": "  Komori GL-840  ",
@@ -13,28 +13,28 @@
     }
   },
   "rules": [
+    "Context is a single root object; top-level keys (here `state`) are addressed by bare identifiers inside `{{ }}`.",
     "A standalone `{{ expr }}` (only whitespace around it) resolves to a TYPED value.",
     "`{{ }}` mixed with surrounding text resolves to a STRING.",
-    "A whole string beginning `$.` (no braces) is a typed path reference; missing -> null.",
-    "A string with neither is a literal.",
-    "Missing member reference inside `{{ }}` is null (standalone) or empty (in text); never throws."
+    "Array indexing is `[i]` (not `.i`); a missing member is null; never throws.",
+    "A string with no `{{ }}` is a literal."
   ],
   "cases": [
-    { "expr": "{{ $.state.name | trim }}",                       "expect": "Komori GL-840" },
-    { "expr": "{{ $.state.name | trim | upper }}",               "expect": "KOMORI GL-840" },
-    { "expr": "{{ $.state.pi | round(2) }}",                     "expect": 3.14 },
-    { "expr": "{{ $.state.items | length }}",                    "expect": 3 },
-    { "expr": "{{ $.state.items | join(', ') }}",                "expect": "a, b, c" },
-    { "expr": "{{ $.state.items | join('-') | upper }}",         "expect": "A-B-C" },
-    { "expr": "{{ $.state.count > 2 }}",                         "expect": true },
-    { "expr": "{{ $.state.count + 1 }}",                         "expect": 4 },
-    { "expr": "{{ $.state.count >= 3 and $.state.active }}",     "expect": true },
-    { "expr": "{{ 'yes' if $.state.active else 'no' }}",         "expect": "yes" },
-    { "expr": "{{ 'b' in $.state.items }}",                      "expect": true },
-    { "expr": "{{ $.state.count ~ ' items' }}",                  "expect": "3 items" },
-    { "expr": "{{ $.state.missing | default('n/a') }}",          "expect": "n/a" },
-    { "expr": "Job {{ $.state.name | trim }} x{{ $.state.count }}", "expect": "Job Komori GL-840 x3" },
-    { "expr": "$.state.items.0",                                 "expect": "a" },
-    { "expr": "plain literal",                                   "expect": "plain literal" }
+    { "expr": "{{ state.name | trim }}",                       "expect": "Komori GL-840" },
+    { "expr": "{{ state.name | trim | upper }}",               "expect": "KOMORI GL-840" },
+    { "expr": "{{ state.pi | round(2) }}",                     "expect": 3.14 },
+    { "expr": "{{ state.items | length }}",                    "expect": 3 },
+    { "expr": "{{ state.items | join(', ') }}",                "expect": "a, b, c" },
+    { "expr": "{{ state.items | join('-') | upper }}",         "expect": "A-B-C" },
+    { "expr": "{{ state.count > 2 }}",                         "expect": true },
+    { "expr": "{{ state.count + 1 }}",                         "expect": 4 },
+    { "expr": "{{ state.count >= 3 and state.active }}",       "expect": true },
+    { "expr": "{{ 'yes' if state.active else 'no' }}",         "expect": "yes" },
+    { "expr": "{{ 'b' in state.items }}",                      "expect": true },
+    { "expr": "{{ state.count ~ ' items' }}",                  "expect": "3 items" },
+    { "expr": "{{ state.missing | default('n/a') }}",          "expect": "n/a" },
+    { "expr": "Job {{ state.name | trim }} x{{ state.count }}", "expect": "Job Komori GL-840 x3" },
+    { "expr": "{{ state.items[0] }}",                          "expect": "a" },
+    { "expr": "plain literal",                                 "expect": "plain literal" }
   ]
 }
