@@ -1,0 +1,16 @@
+name: swift
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Linux is load-bearing: this engine is embedded in the platform server
+  # (WorkflowKit + SurfaceKit). No Apple-only frameworks in the core.
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - run: swift test

@@ -1,0 +1,11 @@
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+
+# Node / bun
+node_modules/
+dist/
+
+# OS
+.DS_Store

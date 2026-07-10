@@ -1,0 +1,16 @@
+{
+  "name": "@cococo/jinja",
+  "version": "0.0.0",
+  "description": "TS peer of the canonical Jinja-subset expression engine. Same behaviour as Swift CococoJinja, proven by shared fixtures.",
+  "type": "module",
+  "private": true,
+  "exports": { ".": "./ts/src/index.ts" },
+  "files": ["ts/src", "fixtures"],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
