@@ -62,6 +62,12 @@ bun install && bun test # TS peer (parity tests skipped until the peer is ported
 
 ## Status
 
-Spike. Swift extraction from WorkflowKit in progress; TS peer is a skeleton
-(parity tests skipped until the evaluator lands). Fixtures moved here from
-cococo-surfaces (the jinja-only work).
+Swift `CococoJinja` **extracted and green** — 194 tests, **no external
+dependencies**, Linux-capable (ported from WorkflowKit; `RuleSubset` /
+`ExecutionContext+Expression` / json-logic bits excluded). The TS peer is a
+skeleton (parity tests skipped until it's ported — seed it from cococo-ui
+`src/expression.ts` + `src/json/path.ts`).
+
+Fixtures are **native Jinja** (bare-identifier roots inside `{{ }}`). The
+`$.`-rooted form (`$.state.x`) is a **surface layer** on top of this engine
+(cococo-surfaces / SurfaceKit), not part of it — `$` doesn't even lex here.

@@ -16,7 +16,12 @@ export type JinjaValue =
 	| JinjaValue[]
 	| { [key: string]: JinjaValue };
 
-/** Evaluate a Jinja-subset expression / template against `roots` (`$` resolves to it). */
+/**
+ * Evaluate a Jinja-subset expression / template. `roots` is the single root
+ * context object; its top-level keys are addressed by BARE identifiers inside
+ * `{{ }}` (e.g. `{{ state.count }}`, `{{ state.items[0] }}`). The `$.`-rooted
+ * form (`$.state.x`) is a surface layer, NOT this engine.
+ */
 export function evaluate(_expression: string, _roots: Record<string, JinjaValue>): JinjaValue {
 	throw new Error(
 		"CococoJinja TS peer not yet ported — see fixtures/expression for the parity target.",
