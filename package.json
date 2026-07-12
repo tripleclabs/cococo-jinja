@@ -5,12 +5,16 @@
   "type": "module",
   "private": true,
   "exports": {
-    ".": "./ts/src/index.ts"
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./ts/src/index.ts"
+    }
   },
-  "files": ["ts/src", "fixtures"],
+  "files": ["ts/src", "types", "fixtures"],
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:types": "tsc -p tsconfig.build.json"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
