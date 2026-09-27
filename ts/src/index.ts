@@ -120,3 +120,5 @@ export function render(
 ): string {
 	return templateRender(source, toContext(context), filters, limits);
 }
+
+export { parseBounded, standardParseLimits, type ParseLimits } from './bounded-parser.ts';

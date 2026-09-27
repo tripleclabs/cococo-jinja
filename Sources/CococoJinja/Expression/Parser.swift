@@ -17,8 +17,8 @@ import Foundation
 
 enum Parser {
     /// Parse a complete expression. Throws if there are trailing tokens.
-    static func parse(_ tokens: [Token]) throws -> Expr {
-        var state = State(tokens)
+    static func parse(_ tokens: [Token], maxDepth: Int = .max) throws -> Expr {
+        var state = State(tokens, maxDepth: maxDepth)
         let expr = try state.parseExpression()
         guard state.peek.kind == .eof else {
             throw ExpressionError.parse(
@@ -39,8 +39,11 @@ enum Parser {
     private struct State {
         private let tokens: [Token]
         private var pos = 0
+        private var depth = 0
+        private let maxDepth: Int
 
-        init(_ tokens: [Token]) {
+        init(_ tokens: [Token], maxDepth: Int) {
+            self.maxDepth = maxDepth
             // `tokens` always ends in `.eof` (Lexer guarantees it).
             self.tokens = tokens
         }
@@ -76,6 +79,8 @@ enum Parser {
         // MARK: ternary (lowest)
 
         mutating func parseExpression() throws -> Expr {
+            guard depth < maxDepth else { throw ExpressionError.parse("expression parse depth exceeded", at: peek.offset) }
+            depth += 1; defer { depth -= 1 }
             let value = try parseOr()
             guard match(.kwIf) else { return value }
             let condition = try parseOr()
@@ -101,6 +106,8 @@ enum Parser {
         // MARK: not (prefix, looser than comparison)
 
         private mutating func parseNot() throws -> Expr {
+            guard depth < maxDepth else { throw ExpressionError.parse("expression parse depth exceeded", at: peek.offset) }
+            depth += 1; defer { depth -= 1 }
             if match(.kwNot) {
                 return .unary(.not, try parseNot())
             }
@@ -182,6 +189,8 @@ enum Parser {
         // MARK: unary - / + (prefix)
 
         private mutating func parseUnary() throws -> Expr {
+            guard depth < maxDepth else { throw ExpressionError.parse("expression parse depth exceeded", at: peek.offset) }
+            depth += 1; defer { depth -= 1 }
             if match(.plus) {
                 return try parseUnary() // unary plus is a no-op
             }

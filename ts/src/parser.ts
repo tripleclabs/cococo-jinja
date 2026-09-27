@@ -17,8 +17,8 @@ import { ExpressionError } from "./errors.ts";
 import { tokenize } from "./lexer.ts";
 import { JV } from "./value.ts";
 
-export function parse(tokens: Token[]): Expr {
-	const state = new State(tokens);
+export function parse(tokens: Token[], maxDepth = Number.MAX_SAFE_INTEGER): Expr {
+	const state = new State(tokens, maxDepth);
 	const expr = state.parseExpression();
 	if (state.peek().kind.t !== "eof") {
 		throw ExpressionError.parse(
@@ -37,8 +37,9 @@ export function parseSource(source: string): Expr {
 class State {
 	private tokens: Token[];
 	private pos = 0;
+	private depth = 0;
 
-	constructor(tokens: Token[]) {
+	constructor(tokens: Token[], private readonly maxDepth: number) {
 		this.tokens = tokens;
 	}
 
@@ -74,12 +75,15 @@ class State {
 	// MARK: ternary (lowest)
 
 	parseExpression(): Expr {
+        if (this.depth >= this.maxDepth) throw ExpressionError.parse("expression parse depth exceeded", this.peek().offset);
+        this.depth++; try {
 		const value = this.parseOr();
 		if (!this.matchKind("kwIf")) return value;
 		const condition = this.parseOr();
 		this.expect("kwElse", "in conditional expression");
 		const otherwise = this.parseExpression(); // right-associative
 		return { e: "conditional", condition, then: value, otherwise };
+        } finally { this.depth--; }
 	}
 
 	// MARK: or / and (n-ary)
@@ -99,10 +103,13 @@ class State {
 	// MARK: not (prefix, looser than comparison)
 
 	private parseNot(): Expr {
+        if (this.depth >= this.maxDepth) throw ExpressionError.parse("expression parse depth exceeded", this.peek().offset);
+        this.depth++; try {
 		if (this.matchKind("kwNot")) {
 			return { e: "unary", op: "not", operand: this.parseNot() };
 		}
 		return this.parseComparison();
+        } finally { this.depth--; }
 	}
 
 	// MARK: comparison & membership (left-associative)
@@ -211,6 +218,8 @@ class State {
 	// MARK: unary - / + (prefix)
 
 	private parseUnary(): Expr {
+        if (this.depth >= this.maxDepth) throw ExpressionError.parse("expression parse depth exceeded", this.peek().offset);
+        this.depth++; try {
 		if (this.matchKind("plus")) {
 			return this.parseUnary(); // unary plus is a no-op
 		}
@@ -228,6 +237,7 @@ class State {
 			return { e: "unary", op: "negate", operand };
 		}
 		return this.parseFilter();
+        } finally { this.depth--; }
 	}
 
 	// MARK: filter | (left-associative)

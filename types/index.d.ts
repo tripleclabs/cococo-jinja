@@ -24,3 +24,4 @@ export type Context = JinjaValue | Record<string, unknown> | unknown;
 export declare function evaluate(source: string, context: Context, filters?: FilterRegistry, limits?: ExpressionLimits): JinjaValue;
 /** Always render to a string (the explicit text projection). */
 export declare function render(source: string, context: Context, filters?: FilterRegistry, limits?: ExpressionLimits): string;
+export { parseBounded, standardParseLimits, type ParseLimits } from './bounded-parser.ts';

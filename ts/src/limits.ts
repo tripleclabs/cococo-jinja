@@ -8,6 +8,8 @@ export interface ExpressionLimits {
 	maxDepth: number;
 	/** Maximum number of evaluation steps (guards expensive/large evaluations). */
 	maxOperations: number;
+	/** Charge traversed operand/filter data against the operation budget. */
+	countValueTraversal?: boolean;
 	/** Maximum length of any produced string (concat / render). */
 	maxStringLength: number;
 	/** Maximum element count of any produced collection (array/object building). */

@@ -162,6 +162,7 @@ public enum Evaluator {
         private func evalBinary(_ op: BinaryOperator, _ lhsExpr: Expr, _ rhsExpr: Expr, depth: Int) throws -> JinjaValue {
             let lhs = try eval(lhsExpr, depth: depth + 1)
             let rhs = try eval(rhsExpr, depth: depth + 1)
+            try chargeValues([lhs, rhs])
 
             switch op {
             case .eq:
@@ -281,11 +282,35 @@ public enum Evaluator {
             }
             let input = try eval(inputExpr, depth: depth + 1)
             let args = try argExprs.map { try eval($0, depth: depth + 1) }
+            try chargeValues([input] + args)
             let result = try filter(input, args)
             // Filters (join/concat/merge/…) can grow their output; enforce the same
             // budget the interpreter applies to inline string/collection building.
             try checkValueSize(result)
             return result
+        }
+
+        private func chargeValues(_ values: [JinjaValue]) throws {
+            guard limits.countValueTraversal else { return }
+            var stack = values
+            func charge(_ amount: Int = 1) throws {
+                guard amount <= limits.maxOperations - operations else { throw ExpressionError.evaluate("expression value traversal budget exceeded") }
+                operations += amount
+            }
+            while let value = stack.popLast() {
+                try charge()
+                switch value {
+                case .string(let text):
+                    for _ in text.unicodeScalars { try charge() }
+                case .array(let items):
+                    guard items.count <= limits.maxOperations - operations else { throw ExpressionError.evaluate("expression value traversal budget exceeded") }
+                    stack.append(contentsOf: items)
+                case .object(let fields):
+                    guard fields.count <= limits.maxOperations - operations else { throw ExpressionError.evaluate("expression value traversal budget exceeded") }
+                    for (key, child) in fields { for _ in key.unicodeScalars { try charge() }; stack.append(child) }
+                default: break
+                }
+            }
         }
 
         // MARK: Budget helpers

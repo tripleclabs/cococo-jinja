@@ -161,6 +161,7 @@ class Run {
 	private evalBinary(op: BinaryOperator, lhsExpr: Expr, rhsExpr: Expr, depth: number): JinjaValue {
 		const lhs = this.eval(lhsExpr, depth + 1);
 		const rhs = this.eval(rhsExpr, depth + 1);
+        this.chargeValues([lhs,rhs]);
 
 		switch (op) {
 			case "==":
@@ -295,10 +296,28 @@ class Run {
 		}
 		const input = this.eval(inputExpr, depth + 1);
 		const args = argExprs.map((a) => this.eval(a, depth + 1));
+        this.chargeValues([input,...args]);
 		const result = filter(input, args);
 		this.checkValueSize(result);
 		return result;
 	}
+
+    private chargeValues(values: JinjaValue[]) {
+        if(!this.limits.countValueTraversal)return;
+        const stack=[...values];
+        const charge=()=>{if(++this.operations>this.limits.maxOperations)throw ExpressionError.evaluate('expression value traversal budget exceeded');};
+        while(stack.length){
+            const value=stack.pop()!;charge();
+            if(value.kind==='string'){for(const _ of value.value)charge();}
+            else if(value.kind==='array'){
+                if(value.value.length>this.limits.maxOperations-this.operations)throw ExpressionError.evaluate('expression value traversal budget exceeded');
+                stack.push(...value.value);
+            }else if(value.kind==='object'){
+                if(value.value.size>this.limits.maxOperations-this.operations)throw ExpressionError.evaluate('expression value traversal budget exceeded');
+                for(const [key,child] of value.value){for(const _ of key)charge();stack.push(child);}
+            }
+        }
+    }
 
 	// MARK: Budget helpers
 

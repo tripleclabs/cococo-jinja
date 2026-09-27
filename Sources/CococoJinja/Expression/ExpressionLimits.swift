@@ -16,6 +16,8 @@ public struct ExpressionLimits: Sendable, Equatable {
     public var maxDepth: Int
     /// Maximum number of evaluation steps (guards expensive/large evaluations).
     public var maxOperations: Int
+    /// Include traversed operand/filter data in maxOperations (opt-in for bounded predicates).
+    public var countValueTraversal: Bool
     /// Maximum length of any produced string (concat / render).
     public var maxStringLength: Int
     /// Maximum element count of any produced collection (array/object building).
@@ -25,12 +27,14 @@ public struct ExpressionLimits: Sendable, Equatable {
         maxDepth: Int = 64,
         maxOperations: Int = 10_000,
         maxStringLength: Int = 100_000,
-        maxCollectionSize: Int = 10_000
+        maxCollectionSize: Int = 10_000,
+        countValueTraversal: Bool = false
     ) {
         precondition(
             maxDepth > 0 && maxOperations > 0 && maxStringLength > 0 && maxCollectionSize > 0,
             "ExpressionLimits guardrails must all be positive"
         )
+        self.countValueTraversal = countValueTraversal
         self.maxDepth = maxDepth
         self.maxOperations = maxOperations
         self.maxStringLength = maxStringLength
