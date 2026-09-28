@@ -30,6 +30,27 @@ ts/                    the TS peer + parity tests
 fixtures/expression/   language-neutral cases {expr, expect} — the same-behaviour contract
 ```
 
+## Swift JSON decoding
+
+`JSONDecoder` decodes `JinjaValue` as plain JSON. Objects retain their keys even
+when they look like old tagged envelopes: `{"type":"null"}` stays an object,
+as does `{"type":"string","value":"hello"}`. This also preserves JSON Schema
+nodes without requiring extra metadata.
+
+**Compatibility change:** persistence readers of pre-cutover tagged data must
+explicitly enable legacy decoding on their decoder:
+
+```swift
+let decoder = JSONDecoder()
+decoder.userInfo[JinjaValue.decodeLegacyTaggedEnvelopes] = true
+let value = try decoder.decode(JinjaValue.self, from: storedData)
+```
+
+The option applies recursively, including inside other `Decodable` models.
+Use it only for data known to use legacy encoding: ambiguous objects are treated
+as tagged values in this mode. Encoding still writes plain JSON, so subsequent
+reads of newly encoded data should use the default decoder.
+
 ## The grammar (parity target)
 
 Value types `null/bool/int/double/string/array/object/date` (**int≠double**

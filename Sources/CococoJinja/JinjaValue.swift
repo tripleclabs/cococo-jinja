@@ -162,13 +162,18 @@ public enum JinjaValue: Codable, Sendable, Equatable, Hashable {
         }
     }
 
+    /// Set this JSONDecoder user-info key to `true` only when reading legacy
+    /// tagged values. It applies recursively and prefers envelopes over ambiguous
+    /// plain objects. Default decoding always preserves plain JSON objects.
+    public static let decodeLegacyTaggedEnvelopes = CodingUserInfoKey(
+        rawValue: "com.cococo.jinja.decodeLegacyTaggedEnvelopes"
+    )!
+
     public init(from decoder: Decoder) throws {
-        // LEGACY: data written before the plain-JSON cutover used a tagged
-        // `{ "type": ..., "value": ... }` envelope. Accept it here so old rows keep
-        // reading; persistence layers migrate-on-load by re-encoding plain on save.
-        // Remove `decodeLegacyTaggedEnvelope` (and this branch) once all stored
-        // workflow data has been migrated — see TAGGED-ENVELOPE-REMOVAL.
-        if let legacy = try Self.decodeLegacyTaggedEnvelope(from: decoder) {
+        // Legacy envelopes collide with valid JSON objects, including JSON Schema.
+        // Only persistence callers that know they are reading old data should opt in.
+        if decoder.userInfo[Self.decodeLegacyTaggedEnvelopes] as? Bool == true,
+           let legacy = try Self.decodeLegacyTaggedEnvelope(from: decoder) {
             self = legacy
             return
         }
@@ -249,6 +254,7 @@ public enum JinjaValue: Codable, Sendable, Equatable, Hashable {
         else {
             return nil
         }
+        guard type == .null || container.contains(.value) else { return nil }
         switch type {
         case .null:
             return .null

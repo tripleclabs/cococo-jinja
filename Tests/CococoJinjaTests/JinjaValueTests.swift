@@ -77,7 +77,9 @@ struct JinjaValueTests {
     @Test("decodes natural plain JSON")
     func decodesPlainJSON() throws {
         func decode(_ s: String) throws -> JinjaValue {
-            try JSONDecoder().decode(JinjaValue.self, from: Data(s.utf8))
+            let decoder = JSONDecoder()
+            decoder.userInfo[JinjaValue.decodeLegacyTaggedEnvelopes] = true
+            return try decoder.decode(JinjaValue.self, from: Data(s.utf8))
         }
         #expect(try decode("null") == .null)
         #expect(try decode("true") == .bool(true))
@@ -94,12 +96,37 @@ struct JinjaValueTests {
         #expect(decoded == .int(5))
     }
 
+    @Test("bare schema types remain objects", arguments: [
+        "null", "boolean", "integer", "number", "string", "array", "object",
+        "bool", "int", "double", "date",
+    ])
+    func bareSchemaTypes(type: String) throws {
+        let value = JinjaValue.object(["type": .string(type)])
+        try assertRoundtrip(value)
+        try assertRoundtrip(.object(["properties": .object(["field": value])]))
+        try assertRoundtrip(.array([value]))
+    }
+
+    @Test("plain objects matching complete legacy envelopes roundtrip")
+    func ambiguousObjectsRoundtrip() throws {
+        for value: JinjaValue in [
+            .object(["type": .string("null"), "value": .null]),
+            .object(["type": .string("string"), "value": .string("hello")]),
+            .object(["type": .string("int"), "value": .string("not an integer")]),
+            .object(["type": .string("array"), "value": .array([.int(1)])]),
+        ] {
+            try assertRoundtrip(value)
+        }
+    }
+
     // MARK: - Legacy tagged-envelope decoding (remove after full migration)
 
     @Test("decodes legacy tagged {type,value} envelopes")
     func decodesLegacyTaggedEnvelope() throws {
         func decode(_ s: String) throws -> JinjaValue {
-            try JSONDecoder().decode(JinjaValue.self, from: Data(s.utf8))
+            let decoder = JSONDecoder()
+            decoder.userInfo[JinjaValue.decodeLegacyTaggedEnvelopes] = true
+            return try decoder.decode(JinjaValue.self, from: Data(s.utf8))
         }
         #expect(try decode(#"{"type":"null"}"#) == .null)
         #expect(try decode(#"{"type":"bool","value":true}"#) == .bool(true))
@@ -137,7 +164,9 @@ struct JinjaValueTests {
 
     @Test("legacy tagged value re-encodes as plain (migrate-on-load)")
     func legacyReencodesAsPlain() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoder = JSONDecoder()
+        decoder.userInfo[JinjaValue.decodeLegacyTaggedEnvelopes] = true
+        let decoded = try decoder.decode(
             JinjaValue.self,
             from: Data(#"{"type":"object","value":{"n":{"type":"int","value":1}}}"#.utf8)
         )
