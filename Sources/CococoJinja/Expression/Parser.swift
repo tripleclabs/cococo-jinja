@@ -28,7 +28,7 @@ public enum Parser {
         var state = State(
             tokens,
             recursionLimit: ExpressionLimits.standard.maxDepth * 4,
-            recursionMessage: "Expression nesting budget exceeded"
+            standardBudget: true
         )
         let expr = try state.parseComplete()
         // Iterative inspection also bounds left-associative chains, which do
@@ -57,7 +57,7 @@ public enum Parser {
     /// Parse with a caller-chosen recursion bound instead of the standard budget.
     /// Used by `ExpressionParser`, which applies its own token/node/depth limits.
     static func parse(_ tokens: [Token], maxDepth: Int) throws -> Expr {
-        var state = State(tokens, recursionLimit: maxDepth, recursionMessage: "expression parse depth exceeded")
+        var state = State(tokens, recursionLimit: maxDepth, standardBudget: false)
         return try state.parseComplete()
     }
 
@@ -73,18 +73,24 @@ public enum Parser {
         private var pos = 0
         private var recursionDepth = 0
         private let recursionLimit: Int
-        private let recursionMessage: String
+        // A Bool, not the message String: State sits in every recursive
+        // frame, and the String's extra bytes overflowed a 512 KB debug-build
+        // stack at the 256-deep standard limit.
+        private let standardBudget: Bool
 
         private mutating func enterRecursion() throws {
             guard recursionDepth < recursionLimit else {
-                throw ExpressionError.parse(recursionMessage, at: peek.offset)
+                throw ExpressionError.parse(
+                    standardBudget ? "Expression nesting budget exceeded" : "expression parse depth exceeded",
+                    at: peek.offset
+                )
             }
             recursionDepth += 1
         }
 
-        init(_ tokens: [Token], recursionLimit: Int, recursionMessage: String) {
+        init(_ tokens: [Token], recursionLimit: Int, standardBudget: Bool) {
             self.recursionLimit = recursionLimit
-            self.recursionMessage = recursionMessage
+            self.standardBudget = standardBudget
             // `tokens` always ends in `.eof` (Lexer guarantees it).
             self.tokens = tokens
         }

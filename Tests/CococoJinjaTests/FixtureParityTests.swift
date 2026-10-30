@@ -87,7 +87,7 @@ struct FixtureParityTests {
         for c in fixture.cases {
             let label = c.expr.count > 80 ? String(c.expr.prefix(80)) + "…" : c.expr
             do {
-                let actual = try Self.onLargeStack { try ExpressionTemplate.evaluate(c.expr, context: fixture.roots) }
+                let actual = try Self.onWorkerSizedStack { try ExpressionTemplate.evaluate(c.expr, context: fixture.roots) }
                 if let phase = c.error {
                     failures.append("[\(label)] expected a \(phase) error but got \(actual)")
                 } else if let expected = c.expect, !JinjaValue.semanticEquals(actual, expected) {
@@ -107,22 +107,21 @@ struct FixtureParityTests {
         #expect(failures.isEmpty)
     }
 
-    /// Runs `body` on a thread with an 8 MiB stack (a main thread's size).
+    /// Runs `body` on a thread with a 512 KiB stack, the size of a Swift
+    /// Testing worker thread.
     ///
-    /// The nesting-budget cases drive the recursive-descent parser to its 256-step
-    /// recursion bound. Optimised builds reach that well inside the 512 KiB stack
-    /// of a Swift Testing worker thread, but unoptimised (debug) frames are large
-    /// enough to overflow it first. This is a property of the debug build and of
-    /// the WorkflowKit parser this engine mirrors, not of the budget, so the test
-    /// gives the parse the stack a release build would not need.
-    private static func onLargeStack(_ body: @escaping @Sendable () throws -> JinjaValue) throws -> JinjaValue {
+    /// The nesting-budget cases drive the recursive-descent parser to its
+    /// 256-step recursion bound. Pinning the stack size makes the suite prove
+    /// that bound is reached, and throws, before an unoptimised (debug) build
+    /// overflows a worker stack, whatever thread the runner happens to use.
+    private static func onWorkerSizedStack(_ body: @escaping @Sendable () throws -> JinjaValue) throws -> JinjaValue {
         let box = ResultBox()
         let done = DispatchSemaphore(value: 0)
         let thread = Thread {
             box.result = Result { try body() }
             done.signal()
         }
-        thread.stackSize = 8 << 20
+        thread.stackSize = 512 << 10
         thread.start()
         done.wait()
         return try box.result!.get()
