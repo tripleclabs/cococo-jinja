@@ -103,9 +103,13 @@ export function scan(source: string): Segment[] {
 		if (chars[i] === "{" && i + 1 < chars.length && chars[i + 1] === "{") {
 			const openAt = i;
 			flushText(openAt);
-			// Find the closing `}}`, skipping `}}` inside quoted string literals.
+			// Find the closing `}}`, skipping `}}` inside quoted string literals
+			// and object literals.
 			let j = i + 2;
 			let quote: string | undefined;
+			// Object literals (`{{ {'size': {'w': 99}} }}`) contain `}`; only a
+			// `}}` outside every open `{` closes the span.
+			let objectDepth = 0;
 			while (j < chars.length) {
 				const c = chars[j]!;
 				if (quote !== undefined) {
@@ -117,6 +121,12 @@ export function scan(source: string): Segment[] {
 					j += 1;
 				} else if (c === "'" || c === '"') {
 					quote = c;
+					j += 1;
+				} else if (c === "{") {
+					objectDepth += 1;
+					j += 1;
+				} else if (c === "}" && objectDepth > 0) {
+					objectDepth -= 1;
 					j += 1;
 				} else if (c === "}" && j + 1 < chars.length && chars[j + 1] === "}") {
 					break;

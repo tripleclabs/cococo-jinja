@@ -15,16 +15,68 @@ import type {
 import { tokenDescription } from "./ast.ts";
 import { ExpressionError } from "./errors.ts";
 import { tokenize } from "./lexer.ts";
+import { standardLimits } from "./limits.ts";
 import { JV } from "./value.ts";
 
-export function parse(tokens: Token[], maxDepth = Number.MAX_SAFE_INTEGER): Expr {
-	const state = new State(tokens, maxDepth);
-	const expr = state.parseExpression();
-	if (state.peek().kind.t !== "eof") {
-		throw ExpressionError.parse(
-			`unexpected ${tokenDescription(state.peek().kind)} after expression`,
-			state.peek().offset,
-		);
+/**
+ * Parse a complete expression. Throws if there are trailing tokens.
+ *
+ * Without `maxDepth` the parse is bounded by the standard budget (matching
+ * Swift/WorkflowKit): at most `standardLimits.maxOperations` tokens, parser
+ * recursion of `maxDepth * 4`, and an AST nesting depth of `standardLimits.maxDepth`.
+ * With `maxDepth`, only that recursion bound applies (used by `parseBounded`,
+ * which enforces its own token/node/depth limits).
+ */
+export function parse(tokens: Token[], maxDepth?: number): Expr {
+	if (maxDepth !== undefined) {
+		return new State(tokens, maxDepth, "expression parse depth exceeded").parseComplete();
+	}
+	if (tokens.length === 0 || tokens.length > standardLimits.maxOperations) {
+		throw ExpressionError.parse("Expression token budget exceeded or missing input");
+	}
+	const expr = new State(
+		tokens,
+		standardLimits.maxDepth * 4,
+		"Expression nesting budget exceeded",
+	).parseComplete();
+	// Iterative inspection also bounds left-associative chains, which do not
+	// consume parser recursion but do recurse during evaluation/inference.
+	const pending: [Expr, number][] = [[expr, 0]];
+	while (pending.length > 0) {
+		const [node, depth] = pending.pop()!;
+		if (depth > standardLimits.maxDepth) {
+			throw ExpressionError.parse("Expression nesting budget exceeded");
+		}
+		let children: Expr[] = [];
+		switch (node.e) {
+			case "literal":
+				break;
+			case "reference":
+				children = node.segments.flatMap((s) => (s.s === "dynamic" ? [s.expr] : []));
+				break;
+			case "unary":
+				children = [node.operand];
+				break;
+			case "binary":
+				children = [node.lhs, node.rhs];
+				break;
+			case "logical":
+				children = node.operands;
+				break;
+			case "arrayLiteral":
+				children = node.elements;
+				break;
+			case "conditional":
+				children = [node.condition, node.then, node.otherwise];
+				break;
+			case "filter":
+				children = [node.input, ...node.arguments];
+				break;
+			case "objectLiteral":
+				children = node.entries.map((entry) => entry.value);
+				break;
+		}
+		for (const child of children) pending.push([child, depth + 1]);
 	}
 	return expr;
 }
@@ -39,8 +91,24 @@ class State {
 	private pos = 0;
 	private depth = 0;
 
-	constructor(tokens: Token[], private readonly maxDepth: number) {
+	constructor(
+		tokens: Token[],
+		private readonly recursionLimit: number,
+		private readonly recursionMessage: string,
+	) {
 		this.tokens = tokens;
+	}
+
+	/** Parse one expression and require that it consumes every token. */
+	parseComplete(): Expr {
+		const expr = this.parseExpression();
+		if (this.peek().kind.t !== "eof") {
+			throw ExpressionError.parse(
+				`unexpected ${tokenDescription(this.peek().kind)} after expression`,
+				this.peek().offset,
+			);
+		}
+		return expr;
 	}
 
 	peek(): Token {
@@ -75,7 +143,7 @@ class State {
 	// MARK: ternary (lowest)
 
 	parseExpression(): Expr {
-        if (this.depth >= this.maxDepth) throw ExpressionError.parse("expression parse depth exceeded", this.peek().offset);
+        if (this.depth >= this.recursionLimit) throw ExpressionError.parse(this.recursionMessage, this.peek().offset);
         this.depth++; try {
 		const value = this.parseOr();
 		if (!this.matchKind("kwIf")) return value;
@@ -103,7 +171,7 @@ class State {
 	// MARK: not (prefix, looser than comparison)
 
 	private parseNot(): Expr {
-        if (this.depth >= this.maxDepth) throw ExpressionError.parse("expression parse depth exceeded", this.peek().offset);
+        if (this.depth >= this.recursionLimit) throw ExpressionError.parse(this.recursionMessage, this.peek().offset);
         this.depth++; try {
 		if (this.matchKind("kwNot")) {
 			return { e: "unary", op: "not", operand: this.parseNot() };
@@ -218,7 +286,7 @@ class State {
 	// MARK: unary - / + (prefix)
 
 	private parseUnary(): Expr {
-        if (this.depth >= this.maxDepth) throw ExpressionError.parse("expression parse depth exceeded", this.peek().offset);
+        if (this.depth >= this.recursionLimit) throw ExpressionError.parse(this.recursionMessage, this.peek().offset);
         this.depth++; try {
 		if (this.matchKind("plus")) {
 			return this.parseUnary(); // unary plus is a no-op

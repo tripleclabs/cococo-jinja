@@ -17,16 +17,48 @@ import Foundation
 
 enum Parser {
     /// Parse a complete expression. Throws if there are trailing tokens.
-    static func parse(_ tokens: [Token], maxDepth: Int = .max) throws -> Expr {
-        var state = State(tokens, maxDepth: maxDepth)
-        let expr = try state.parseExpression()
-        guard state.peek.kind == .eof else {
-            throw ExpressionError.parse(
-                "unexpected \(state.peek.kind.description) after expression",
-                at: state.peek.offset
-            )
+    ///
+    /// Always bounded by the standard budget (matching WorkflowKit): at most
+    /// `ExpressionLimits.standard.maxOperations` tokens, parser recursion of
+    /// `maxDepth * 4`, and an AST nesting depth of `ExpressionLimits.standard.maxDepth`.
+    static func parse(_ tokens: [Token]) throws -> Expr {
+        guard !tokens.isEmpty, tokens.count <= ExpressionLimits.standard.maxOperations else {
+            throw ExpressionError.parse("Expression token budget exceeded or missing input")
+        }
+        var state = State(
+            tokens,
+            recursionLimit: ExpressionLimits.standard.maxDepth * 4,
+            recursionMessage: "Expression nesting budget exceeded"
+        )
+        let expr = try state.parseComplete()
+        // Iterative inspection also bounds left-associative chains, which do
+        // not consume parser recursion but do recurse during static inference.
+        var pending: [(Expr, Int)] = [(expr, 0)]
+        while let (node, depth) = pending.popLast() {
+            guard depth <= ExpressionLimits.standard.maxDepth else {
+                throw ExpressionError.parse("Expression nesting budget exceeded")
+            }
+            let children: [Expr]
+            switch node {
+            case .literal: children = []
+            case let .reference(path): children = path.compactMap { if case let .dynamic(value) = $0 { return value }; return nil }
+            case let .unary(_, value): children = [value]
+            case let .binary(_, left, right): children = [left, right]
+            case let .logical(_, values), let .arrayLiteral(values): children = values
+            case let .conditional(condition, then, otherwise): children = [condition, then, otherwise]
+            case let .filter(_, input, arguments): children = [input] + arguments
+            case let .objectLiteral(entries): children = entries.map(\.value)
+            }
+            pending += children.map { ($0, depth + 1) }
         }
         return expr
+    }
+
+    /// Parse with a caller-chosen recursion bound instead of the standard budget.
+    /// Used by `ExpressionParser`, which applies its own token/node/depth limits.
+    static func parse(_ tokens: [Token], maxDepth: Int) throws -> Expr {
+        var state = State(tokens, recursionLimit: maxDepth, recursionMessage: "expression parse depth exceeded")
+        return try state.parseComplete()
     }
 
     /// Convenience: lex + parse a source string.
@@ -39,11 +71,20 @@ enum Parser {
     private struct State {
         private let tokens: [Token]
         private var pos = 0
-        private var depth = 0
-        private let maxDepth: Int
+        private var recursionDepth = 0
+        private let recursionLimit: Int
+        private let recursionMessage: String
 
-        init(_ tokens: [Token], maxDepth: Int) {
-            self.maxDepth = maxDepth
+        private mutating func enterRecursion() throws {
+            guard recursionDepth < recursionLimit else {
+                throw ExpressionError.parse(recursionMessage, at: peek.offset)
+            }
+            recursionDepth += 1
+        }
+
+        init(_ tokens: [Token], recursionLimit: Int, recursionMessage: String) {
+            self.recursionLimit = recursionLimit
+            self.recursionMessage = recursionMessage
             // `tokens` always ends in `.eof` (Lexer guarantees it).
             self.tokens = tokens
         }
@@ -76,11 +117,23 @@ enum Parser {
             advance()
         }
 
+        /// Parse one expression and require that it consumes every token.
+        mutating func parseComplete() throws -> Expr {
+            let expr = try parseExpression()
+            guard peek.kind == .eof else {
+                throw ExpressionError.parse(
+                    "unexpected \(peek.kind.description) after expression",
+                    at: peek.offset
+                )
+            }
+            return expr
+        }
+
         // MARK: ternary (lowest)
 
         mutating func parseExpression() throws -> Expr {
-            guard depth < maxDepth else { throw ExpressionError.parse("expression parse depth exceeded", at: peek.offset) }
-            depth += 1; defer { depth -= 1 }
+            try enterRecursion()
+            defer { recursionDepth -= 1 }
             let value = try parseOr()
             guard match(.kwIf) else { return value }
             let condition = try parseOr()
@@ -106,8 +159,8 @@ enum Parser {
         // MARK: not (prefix, looser than comparison)
 
         private mutating func parseNot() throws -> Expr {
-            guard depth < maxDepth else { throw ExpressionError.parse("expression parse depth exceeded", at: peek.offset) }
-            depth += 1; defer { depth -= 1 }
+            try enterRecursion()
+            defer { recursionDepth -= 1 }
             if match(.kwNot) {
                 return .unary(.not, try parseNot())
             }
@@ -189,8 +242,8 @@ enum Parser {
         // MARK: unary - / + (prefix)
 
         private mutating func parseUnary() throws -> Expr {
-            guard depth < maxDepth else { throw ExpressionError.parse("expression parse depth exceeded", at: peek.offset) }
-            depth += 1; defer { depth -= 1 }
+            try enterRecursion()
+            defer { recursionDepth -= 1 }
             if match(.plus) {
                 return try parseUnary() // unary plus is a no-op
             }

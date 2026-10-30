@@ -119,6 +119,7 @@ public enum ExpressionTemplate {
                 // quoted string literal (e.g. `{{ '}}' }}`).
                 var j = i + 2
                 var quote: Character?
+                var objectDepth = 0
                 while j < chars.count {
                     let c = chars[j]
                     if let q = quote {
@@ -130,6 +131,12 @@ public enum ExpressionTemplate {
                         j += 1
                     } else if c == "'" || c == "\"" {
                         quote = c
+                        j += 1
+                    } else if c == "{" {
+                        objectDepth += 1
+                        j += 1
+                    } else if c == "}", objectDepth > 0 {
+                        objectDepth -= 1
                         j += 1
                     } else if c == "}", j + 1 < chars.count, chars[j + 1] == "}" {
                         break

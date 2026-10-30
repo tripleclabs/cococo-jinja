@@ -4,7 +4,7 @@
 //
 //  Copyright Triple C Labs GmbH
 //
-//  Runs `fixtures/expression/parity-basic.json` — the language-neutral parity
+//  Runs every `fixtures/expression/*.json` file — the language-neutral parity
 //  suite shared with the @cococo/jinja TS peer — against this engine.
 //
 //  The fixture uses the engine's NATIVE syntax: a single root `JinjaValue.object`
@@ -19,7 +19,12 @@ import Testing
 
 @testable import CococoJinja
 
-@Suite("Fixture parity — parity-basic.json")
+/// Hands a result back from the large-stack thread; the semaphore orders access.
+private final class ResultBox: @unchecked Sendable {
+    var result: Result<JinjaValue, Error>?
+}
+
+@Suite("Fixture parity — fixtures/expression")
 struct FixtureParityTests {
 
     private struct Fixture: Decodable {
@@ -28,23 +33,42 @@ struct FixtureParityTests {
         let cases: [Case]
         struct Case: Decodable {
             let expr: String
-            let expect: JinjaValue
+            /// The typed result, or nil when the case expects an error.
+            let expect: JinjaValue?
+            /// The expected `ExpressionError.Phase` raw value.
+            let error: String?
+
+            private enum CodingKeys: String, CodingKey { case expr, expect, error }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                expr = try container.decode(String.self, forKey: .expr)
+                error = try container.decodeIfPresent(String.self, forKey: .error)
+                // `"expect": null` is a real expectation (.null), not an absent one.
+                expect = container.contains(.expect) ? try container.decode(JinjaValue.self, forKey: .expect) : nil
+            }
         }
     }
 
-    /// Load the fixture from the repo root, located relative to this source file
-    /// (`Tests/CococoJinjaTests/…` → up three dirs).
-    private static func loadFixture() throws -> Fixture {
-        let repoRoot = URL(fileURLWithPath: #filePath)
+    private static var expressionFixtureDirectory: URL {
+        URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // CococoJinjaTests/
             .deletingLastPathComponent()   // Tests/
             .deletingLastPathComponent()   // repo root
-        let url = repoRoot
             .appendingPathComponent("fixtures")
             .appendingPathComponent("expression")
-            .appendingPathComponent("parity-basic.json")
+    }
+
+    private static func loadFixture(_ name: String = "parity-basic") throws -> Fixture {
+        let url = expressionFixtureDirectory.appendingPathComponent("\(name).json")
         return try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
     }
+
+    /// Every fixture file in `fixtures/expression/`, by name (without `.json`).
+    static let fixtureNames: [String] = {
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: expressionFixtureDirectory.path)) ?? []
+        return files.filter { $0.hasSuffix(".json") }.map { String($0.dropLast(5)) }.sorted()
+    }()
 
     @Test("Fixture loads and decodes roots + cases")
     func fixtureLoads() throws {
@@ -54,24 +78,54 @@ struct FixtureParityTests {
         #expect(fixture.roots["state"]?["count"] == .int(3))
     }
 
-    @Test("Every fixture case evaluates to its expected value")
-    func parity() throws {
-        let fixture = try Self.loadFixture()
+    @Test("Every fixture case evaluates to its expected value", arguments: fixtureNames)
+    func parity(name: String) throws {
+        let fixture = try Self.loadFixture(name)
+        #expect(fixture.name == name)
+        #expect(!fixture.cases.isEmpty)
         var failures: [String] = []
         for c in fixture.cases {
+            let label = c.expr.count > 80 ? String(c.expr.prefix(80)) + "…" : c.expr
             do {
-                let actual = try ExpressionTemplate.evaluate(c.expr, context: fixture.roots)
-                if !JinjaValue.semanticEquals(actual, c.expect) {
-                    failures.append("[\(c.expr)] expected \(c.expect) but got \(actual)")
+                let actual = try Self.onLargeStack { try ExpressionTemplate.evaluate(c.expr, context: fixture.roots) }
+                if let phase = c.error {
+                    failures.append("[\(label)] expected a \(phase) error but got \(actual)")
+                } else if let expected = c.expect, !JinjaValue.semanticEquals(actual, expected) {
+                    failures.append("[\(label)] expected \(expected) but got \(actual)")
+                }
+            } catch let error as ExpressionError {
+                if c.error != error.phase.rawValue {
+                    failures.append("[\(label)] threw \(error)")
                 }
             } catch {
-                failures.append("[\(c.expr)] threw \(error)")
+                failures.append("[\(label)] threw \(error)")
             }
         }
         if !failures.isEmpty {
             Issue.record(Comment(rawValue: "Fixture parity failures:\n" + failures.joined(separator: "\n")))
         }
         #expect(failures.isEmpty)
+    }
+
+    /// Runs `body` on a thread with an 8 MiB stack (a main thread's size).
+    ///
+    /// The nesting-budget cases drive the recursive-descent parser to its 256-step
+    /// recursion bound. Optimised builds reach that well inside the 512 KiB stack
+    /// of a Swift Testing worker thread, but unoptimised (debug) frames are large
+    /// enough to overflow it first. This is a property of the debug build and of
+    /// the WorkflowKit parser this engine mirrors, not of the budget, so the test
+    /// gives the parse the stack a release build would not need.
+    private static func onLargeStack(_ body: @escaping @Sendable () throws -> JinjaValue) throws -> JinjaValue {
+        let box = ResultBox()
+        let done = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            box.result = Result { try body() }
+            done.signal()
+        }
+        thread.stackSize = 8 << 20
+        thread.start()
+        done.wait()
+        return try box.result!.get()
     }
 
     /// Documents that `$.`-rooting is a surface-layer feature, not the raw engine.
