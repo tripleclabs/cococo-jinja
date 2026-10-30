@@ -62,6 +62,42 @@ export function isNumeric(v: JinjaValue): boolean {
 	return v.kind === "int" || v.kind === "double";
 }
 
+/**
+ * Integer value (Swift `intValue`): an `.int`, or a `.double` that is exactly
+ * integral and representable as a Swift `Int`; `undefined` otherwise.
+ */
+export function intValue(v: JinjaValue): number | undefined {
+	if (v.kind === "int") return v.value;
+	if (v.kind === "double" && isExactInt64(v.value)) return v.value;
+	return undefined;
+}
+
+/**
+ * JSON's canonical numeric policy (Swift `canonicalized`): every exactly
+ * integral double becomes an `.int`, recursively. Object keys are preserved
+ * verbatim; legacy envelopes are never decoded.
+ */
+export function canonicalized(v: JinjaValue): JinjaValue {
+	switch (v.kind) {
+		case "double":
+			return isExactInt64(v.value) ? JV.int(v.value) : v;
+		case "array":
+			return JV.array(v.value.map(canonicalized));
+		case "object": {
+			const map = new Map<string, JinjaValue>();
+			for (const [k, val] of v.value) map.set(k, canonicalized(val));
+			return { kind: "object", value: map };
+		}
+		default:
+			return v;
+	}
+}
+
+/** Swift `Int(exactly:)` for a 64-bit Int: integral and within [-2^63, 2^63). */
+function isExactInt64(x: number): boolean {
+	return Number.isInteger(x) && x >= -(2 ** 63) && x < 2 ** 63;
+}
+
 /** Numeric value as a double, for `.int`/`.double` only; `undefined` otherwise. */
 export function asDouble(v: JinjaValue): number | undefined {
 	if (v.kind === "int" || v.kind === "double") return v.value;
@@ -316,8 +352,9 @@ export function fromJSON(json: unknown): JinjaValue {
 	if (json === null || json === undefined) return JV.null;
 	if (typeof json === "boolean") return JV.bool(json);
 	if (typeof json === "number") {
-		// Integral doubles normalise to int on decode (per Swift policy).
-		if (Number.isInteger(json)) return JV.int(json);
+		// Integral doubles normalise to int on decode (Swift `canonicalized`):
+		// only when they fit a Swift Int, so `1e300` stays a double.
+		if (isExactInt64(json)) return JV.int(json);
 		return JV.double(json);
 	}
 	if (typeof json === "string") return JV.string(json);
@@ -333,9 +370,23 @@ export function fromJSON(json: unknown): JinjaValue {
 	return JV.string(String(json));
 }
 
-/** Parse a JSON string into a JinjaValue. */
+/**
+ * Parse a JSON string into a JinjaValue (Swift `fromJSONString`/`fromJSONData`).
+ * Like Swift's `JSONDecoder`, a number literal that overflows to a non-finite
+ * double (`1e9999`) is rejected instead of becoming `Infinity`.
+ */
 export function fromJSONString(s: string): JinjaValue {
-	return fromJSON(JSON.parse(s));
+	return fromJSON(parseFiniteJSON(s));
+}
+
+/** `JSON.parse`, throwing on any number that is not finite (Swift parity). */
+function parseFiniteJSON(s: string): unknown {
+	return JSON.parse(s, (_key, value) => {
+		if (typeof value === "number" && !Number.isFinite(value)) {
+			throw new SyntaxError(`JSON number ${s.length > 40 ? "" : `in ${s} `}is not representable`);
+		}
+		return value;
+	});
 }
 
 // MARK: - Codable-parity decode (plain JSON + legacy tagged envelope)
@@ -356,16 +407,36 @@ const LEGACY_TYPES = new Set([
 	"date",
 ]);
 
-/** Decode a raw JS JSON graph into a JinjaValue, accepting the legacy envelope. */
+/**
+ * Decode a raw JS JSON graph into a JinjaValue, accepting the legacy envelope.
+ * Matches Swift `JSONDecoder` with `JinjaValue.decodeLegacyTaggedEnvelopes`:
+ * an envelope whose `value` does not match its `type` (or is missing for a
+ * non-null type) THROWS, exactly as WorkflowKit's legacy storage reader does.
+ */
 export function decodeJinjaValue(json: unknown): JinjaValue {
 	const legacy = decodeLegacyTaggedEnvelope(json);
 	if (legacy !== undefined) return legacy;
+	if (Array.isArray(json)) return JV.array(json.map(decodeJinjaValue));
+	if (json !== null && typeof json === "object") {
+		const map = new Map<string, JinjaValue>();
+		for (const [k, val] of Object.entries(json as Record<string, unknown>)) {
+			map.set(k, decodeJinjaValue(val));
+		}
+		return { kind: "object", value: map };
+	}
 	return fromJSON(json);
 }
 
 /** Parse a JSON string with legacy-envelope support (Swift Codable parity). */
 export function decodeJinjaValueString(s: string): JinjaValue {
-	return decodeJinjaValue(JSON.parse(s));
+	return decodeJinjaValue(parseFiniteJSON(s));
+}
+
+/** Swift throws a `DecodingError` here; TS throws a `TypeError`. */
+function legacyMismatch(type: string, value: unknown): TypeError {
+	return new TypeError(
+		`legacy tagged value of type '${type}' has an invalid value: ${JSON.stringify(value) ?? "missing"}`,
+	);
 }
 
 function decodeLegacyTaggedEnvelope(json: unknown): JinjaValue | undefined {
@@ -378,29 +449,39 @@ function decodeLegacyTaggedEnvelope(json: unknown): JinjaValue | undefined {
 	if (!exactType && !exactTypeValue) return undefined;
 	const type = obj.type;
 	if (typeof type !== "string" || !LEGACY_TYPES.has(type)) return undefined;
+	const value = obj.value;
 	switch (type) {
 		case "null":
 			return JV.null;
 		case "bool":
-			return JV.bool(Boolean(obj.value));
+			if (typeof value !== "boolean") throw legacyMismatch(type, value);
+			return JV.bool(value);
 		case "int":
-			return JV.int(Number(obj.value));
+			if (typeof value !== "number" || !isExactInt64(value)) throw legacyMismatch(type, value);
+			return JV.int(value);
 		case "double":
-			return JV.double(Number(obj.value));
+			if (typeof value !== "number") throw legacyMismatch(type, value);
+			return JV.double(value);
 		case "string":
-			return JV.string(String(obj.value));
+			if (typeof value !== "string") throw legacyMismatch(type, value);
+			return JV.string(value);
 		case "array":
-			return JV.array((obj.value as unknown[]).map(decodeJinjaValue));
+			if (!Array.isArray(value)) throw legacyMismatch(type, value);
+			return JV.array(value.map(decodeJinjaValue));
 		case "object": {
+			if (value === null || typeof value !== "object" || Array.isArray(value)) {
+				throw legacyMismatch(type, value);
+			}
 			const map = new Map<string, JinjaValue>();
-			for (const [k, val] of Object.entries(obj.value as Record<string, unknown>)) {
+			for (const [k, val] of Object.entries(value as Record<string, unknown>)) {
 				map.set(k, decodeJinjaValue(val));
 			}
 			return { kind: "object", value: map };
 		}
 		case "date":
 			// Legacy stored a Unix timestamp (seconds).
-			return JV.date(new Date(Number(obj.value) * 1000));
+			if (typeof value !== "number") throw legacyMismatch(type, value);
+			return JV.date(new Date(value * 1000));
 		default:
 			return undefined;
 	}

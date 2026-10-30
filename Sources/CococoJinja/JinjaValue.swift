@@ -56,7 +56,19 @@ public enum JinjaValue: Codable, Sendable, Equatable, Hashable {
 
     public var intValue: Int? {
         if case let .int(v) = self { return v }
+        if case let .double(v) = self { return Int(exactly: v) }
         return nil
+    }
+
+    /// JSON's canonical numeric policy, shared by authoring and runtime input.
+    /// This preserves object keys verbatim; it never decodes legacy envelopes.
+    public var canonicalized: JinjaValue {
+        switch self {
+        case let .double(value): return Int(exactly: value).map(JinjaValue.int) ?? self
+        case let .array(values): return .array(values.map(\.canonicalized))
+        case let .object(values): return .object(values.mapValues(\.canonicalized))
+        default: return self
+        }
     }
 
     public var doubleValue: Double? {
@@ -254,7 +266,6 @@ public enum JinjaValue: Codable, Sendable, Equatable, Hashable {
         else {
             return nil
         }
-        guard type == .null || container.contains(.value) else { return nil }
         switch type {
         case .null:
             return .null

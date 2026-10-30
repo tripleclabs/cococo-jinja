@@ -204,6 +204,26 @@ struct JinjaValueTests {
     func intValue() {
         #expect(JinjaValue.int(7).intValue == 7)
         #expect(JinjaValue.string("7").intValue == nil)
+        #expect(JinjaValue.double(4).intValue == 4)
+        #expect(JinjaValue.double(4.5).intValue == nil)
+        #expect(JinjaValue.double(1e300).intValue == nil)
+    }
+
+    @Test("canonicalized folds exactly-integral doubles to int, recursively")
+    func canonicalized() {
+        let value: JinjaValue = .object([
+            "weeks": .double(4),
+            "ratio": .double(0.5),
+            "items": .array([.double(2), .double(1e300), .string("3.0")]),
+        ])
+        #expect(value.canonicalized == .object([
+            "weeks": .int(4),
+            "ratio": .double(0.5),
+            "items": .array([.int(2), .double(1e300), .string("3.0")]),
+        ]))
+        // Object keys that look like legacy envelopes are preserved verbatim.
+        let envelope: JinjaValue = .object(["type": .string("double"), "value": .double(2)])
+        #expect(envelope.canonicalized == .object(["type": .string("double"), "value": .int(2)]))
     }
 
     @Test("doubleValue coerces int to double")

@@ -20,6 +20,7 @@ import { fromJSON, type JinjaValue } from "./value.ts";
 export type { JinjaValue } from "./value.ts";
 export {
 	asDouble,
+	canonicalized,
 	type ComparisonResult,
 	decodeJinjaValue,
 	decodeJinjaValueString,
@@ -27,6 +28,7 @@ export {
 	fromJSON,
 	fromJSONString,
 	getPath,
+	intValue,
 	member,
 	isNumeric,
 	isTruthy,

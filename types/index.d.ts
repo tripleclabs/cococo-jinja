@@ -2,7 +2,7 @@ import { FilterRegistry } from "./filters.ts";
 import type { ExpressionLimits } from "./limits.ts";
 import { type JinjaValue } from "./value.ts";
 export type { JinjaValue } from "./value.ts";
-export { asDouble, type ComparisonResult, decodeJinjaValue, decodeJinjaValueString, element, fromJSON, fromJSONString, getPath, member, isNumeric, isTruthy, JV, orderedAscending, orderedDescending, orderedSame, renderDouble, renderedString, semanticCompare, semanticEquals, toJSONLogicValue, toJSONString, typeName, } from "./value.ts";
+export { asDouble, canonicalized, type ComparisonResult, decodeJinjaValue, decodeJinjaValueString, element, fromJSON, fromJSONString, getPath, intValue, member, isNumeric, isTruthy, JV, orderedAscending, orderedDescending, orderedSame, renderDouble, renderedString, semanticCompare, semanticEquals, toJSONLogicValue, toJSONString, typeName, } from "./value.ts";
 export { ExpressionError, type ExpressionPhase } from "./errors.ts";
 export { type ExpressionLimits, makeLimits, standardLimits } from "./limits.ts";
 export type { BinaryOperator, Expr, LogicalOperator, ObjectEntry, PathSegment, Token, TokenKind, UnaryOperator, } from "./ast.ts";

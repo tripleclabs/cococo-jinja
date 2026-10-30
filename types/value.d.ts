@@ -34,6 +34,17 @@ export declare const JV: {
 };
 export declare function typeName(v: JinjaValue): string;
 export declare function isNumeric(v: JinjaValue): boolean;
+/**
+ * Integer value (Swift `intValue`): an `.int`, or a `.double` that is exactly
+ * integral and representable as a Swift `Int`; `undefined` otherwise.
+ */
+export declare function intValue(v: JinjaValue): number | undefined;
+/**
+ * JSON's canonical numeric policy (Swift `canonicalized`): every exactly
+ * integral double becomes an `.int`, recursively. Object keys are preserved
+ * verbatim; legacy envelopes are never decoded.
+ */
+export declare function canonicalized(v: JinjaValue): JinjaValue;
 /** Numeric value as a double, for `.int`/`.double` only; `undefined` otherwise. */
 export declare function asDouble(v: JinjaValue): number | undefined;
 declare const INT_MAX_SAFE: number;
@@ -75,9 +86,18 @@ export declare function toJSONString(v: JinjaValue): string;
  * part become `.double`.
  */
 export declare function fromJSON(json: unknown): JinjaValue;
-/** Parse a JSON string into a JinjaValue. */
+/**
+ * Parse a JSON string into a JinjaValue (Swift `fromJSONString`/`fromJSONData`).
+ * Like Swift's `JSONDecoder`, a number literal that overflows to a non-finite
+ * double (`1e9999`) is rejected instead of becoming `Infinity`.
+ */
 export declare function fromJSONString(s: string): JinjaValue;
-/** Decode a raw JS JSON graph into a JinjaValue, accepting the legacy envelope. */
+/**
+ * Decode a raw JS JSON graph into a JinjaValue, accepting the legacy envelope.
+ * Matches Swift `JSONDecoder` with `JinjaValue.decodeLegacyTaggedEnvelopes`:
+ * an envelope whose `value` does not match its `type` (or is missing for a
+ * non-null type) THROWS, exactly as WorkflowKit's legacy storage reader does.
+ */
 export declare function decodeJinjaValue(json: unknown): JinjaValue;
 /** Parse a JSON string with legacy-envelope support (Swift Codable parity). */
 export declare function decodeJinjaValueString(s: string): JinjaValue;

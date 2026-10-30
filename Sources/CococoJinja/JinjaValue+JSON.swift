@@ -26,7 +26,7 @@ extension JinjaValue {
                 return .bool(num.boolValue)
             }
             if NSNumberJSONScalar.isFloatType(num) {
-                return .double(num.doubleValue)
+                return JinjaValue.double(num.doubleValue).canonicalized
             }
             return .int(num.intValue)
         case let bool as Bool:
@@ -51,8 +51,9 @@ extension JinjaValue {
         guard let data = jsonString.data(using: .utf8) else {
             throw JinjaValueJSONError.invalidUTF8
         }
-        let json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-        return fromJSON(json)
+        // Decode numeric tokens directly: Foundation's NSNumber bridge can round
+        // a Double by one ULP on Linux before it reaches JinjaValue.
+        return try JSONDecoder().decode(Self.self, from: data).canonicalized
     }
 
     /// Parse JSON Data into a JinjaValue.
@@ -60,8 +61,9 @@ extension JinjaValue {
     /// - Returns: The parsed JinjaValue
     /// - Throws: If the data is not valid JSON
     public static func fromJSONData(_ data: Data) throws -> JinjaValue {
-        let json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-        return fromJSON(json)
+        // Decode numeric tokens directly: Foundation's NSNumber bridge can round
+        // a Double by one ULP on Linux before it reaches JinjaValue.
+        return try JSONDecoder().decode(Self.self, from: data).canonicalized
     }
 
     // MARK: - To Standard JSON

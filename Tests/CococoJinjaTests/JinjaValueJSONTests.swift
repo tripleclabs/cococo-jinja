@@ -10,6 +10,57 @@ import XCTest
 
 final class JinjaValueJSONTests: XCTestCase {
 
+    func testJSONTextPreservesDoublePrecision() throws {
+        let values = [0.16426666666666667, Double.pi, Double.leastNormalMagnitude,
+                      Double.greatestFiniteMagnitude, 0.1.nextUp, -0.1.nextDown]
+        for value in values {
+            let data = try JSONEncoder().encode(["value": value])
+            let text = String(decoding: data, as: UTF8.self)
+            for parsed in [try JinjaValue.fromJSONData(data), try JinjaValue.fromJSONString(text)] {
+                let actual = try XCTUnwrap(parsed["value"]?.doubleValue)
+                XCTAssertEqual(actual.bitPattern, value.bitPattern)
+                let restored = try JSONDecoder().decode([String: Double].self, from: parsed.toJSONData())
+                XCTAssertEqual(restored["value"]?.bitPattern, value.bitPattern)
+            }
+        }
+        XCTAssertEqual(try JinjaValue.fromJSONString("1.0"), .int(1))
+        XCTAssertEqual(try JinjaValue.fromJSONString("true"), .bool(true))
+        XCTAssertEqual(try JinjaValue.fromJSONString("{\"type\":\"int\",\"value\":7}"),
+                       .object(["type": .string("int"), "value": .int(7)]))
+    }
+
+    func testJSONIntegerBoundariesRemainExactThroughTextAndData() throws {
+        for value in [Int.min, Int.min + 1, -9007199254740993, 9007199254740993, Int.max - 1, Int.max] {
+            let text = String(value)
+            XCTAssertEqual(try JinjaValue.fromJSONString(text), .int(value))
+            let parsed = try JinjaValue.fromJSONData(Data(text.utf8))
+            XCTAssertEqual(parsed, .int(value))
+            XCTAssertEqual(try JinjaValue.fromJSONData(parsed.toJSONData()), .int(value))
+        }
+    }
+
+    func testJSONPrimitiveAndNestedTransportRetainsTypes() throws {
+        let cases: [(String, JinjaValue)] = [
+            ("null", .null), ("false", .bool(false)), ("1e3", .int(1000)),
+            ("1.25e-2", .double(0.0125)), (#""a\n雪""#, .string("a\n雪")),
+            (#"[null,[false,1e3],{"value":0.0125}]"#,
+             .array([.null, .array([.bool(false), .int(1000)]), .object(["value": .double(0.0125)])]))
+        ]
+        for (text, expected) in cases {
+            XCTAssertEqual(try JinjaValue.fromJSONString(text), expected)
+            XCTAssertEqual(try JinjaValue.fromJSONData(Data(text.utf8)), expected)
+        }
+    }
+
+    func testJSONMalformedOrNonFiniteValuesFailWithoutPartialResult() {
+        for text in ["", "NaN", "Infinity", "1e9999", "01", "true false", #"{"a":}"#,
+                     String(repeating: "[", count: 10000) + "0" + String(repeating: "]", count: 10000)] {
+            XCTAssertThrowsError(try JinjaValue.fromJSONString(text), text.prefix(80).description)
+            XCTAssertThrowsError(try JinjaValue.fromJSONData(Data(text.utf8)), text.prefix(80).description)
+        }
+    }
+
+
     // MARK: - fromJSON
 
     func testFromJSONWithString() {

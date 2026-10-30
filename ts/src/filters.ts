@@ -6,6 +6,7 @@
 import { ExpressionError } from "./errors.ts";
 import {
 	asDouble,
+	intValue,
 	type JinjaValue,
 	JV,
 	orderedAscending,
@@ -154,11 +155,12 @@ export const standardFilters: Record<string, ExpressionFilter> = {
 		let digits: number;
 		if (args.length === 0) digits = 0;
 		else if (args.length === 1) {
-			const a = args[0]!;
-			if (a.kind !== "int") {
+			// Swift `intValue`: an int, or an exactly-integral double (`round(2.0)`).
+			const d = intValue(args[0]!);
+			if (d === undefined) {
 				throw ExpressionError.evaluate("filter 'round' precision must be an integer");
 			}
-			digits = a.value;
+			digits = d;
 		} else {
 			throw ExpressionError.evaluate(
 				`filter 'round' expects 0 or 1 argument(s), got ${args.length}`,
