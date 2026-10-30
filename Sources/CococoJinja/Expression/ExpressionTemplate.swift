@@ -56,7 +56,8 @@ public enum ExpressionTemplate {
 
     // MARK: - Segments
 
-    enum Segment: Equatable {
+    /// A template piece: literal text or a `{{ }}` expression span.
+    public enum Segment: Equatable, Sendable {
         case text(String)
         case expression(Expr)
     }
@@ -99,7 +100,8 @@ public enum ExpressionTemplate {
 
     // MARK: - Scanner (text vs `{{ }}` spans)
 
-    static func scan(_ source: String) throws -> [Segment] {
+    /// Split a template into text and parsed `{{ }}` expression spans.
+    public static func scan(_ source: String) throws -> [Segment] {
         let chars = Array(source)
         var segments: [Segment] = []
         var textStart = 0

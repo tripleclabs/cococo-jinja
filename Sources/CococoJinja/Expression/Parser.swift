@@ -15,7 +15,7 @@
 
 import Foundation
 
-enum Parser {
+public enum Parser {
     /// Parse a complete expression. Throws if there are trailing tokens.
     ///
     /// Always bounded by the standard budget (matching WorkflowKit): at most
@@ -61,8 +61,8 @@ enum Parser {
         return try state.parseComplete()
     }
 
-    /// Convenience: lex + parse a source string.
-    static func parse(source: String) throws -> Expr {
+    /// Lex + parse a bare expression under the standard budget.
+    public static func parse(source: String) throws -> Expr {
         try parse(Lexer.tokenize(source))
     }
 
